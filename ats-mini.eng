@@ -1,0 +1,382 @@
+// ===================================================================================
+// SECTION 1: LIBRARY INCLUDES AND GLOBAL DEFINITIONS
+// ===================================================================================
+
+// Include necessary libraries
+#include <Wire.h>           // For I2C communication (to interface with SI4735)
+#include <TFT_eSPI.h>       // Main library for the TFT display
+#include <SI4735-fixed.h>   // Library for controlling the SI4735 radio chip
+#include <Rotary.h>         // Library for handling the rotary encoder
+#include "patch_init.h"     // Patch file to enable SSB mode in the SI4735
+
+// --- ESP32 Pin Definitions ---
+#define PIN_POWER_ON     15 // Pin to power on the SI4735 chip
+#define RESET_PIN        16 // Pin to reset the SI4735 chip
+#define PIN_AMP_EN       10 // Pin to enable/disable the external audio amplifier
+#define ESP32_I2C_SCL    17 // SCL pin for the I2C bus
+#define ESP32_I2C_SDA    18 // SDA pin for the I2C bus
+#define ENCODER_PIN_A    2  // Encoder pin "A"
+#define ENCODER_PIN_B    1  // Encoder pin "B"
+#define ENCODER_BTN      21 // Encoder push button pin
+#define PIN_LCD_BL       38 // Pin to control the display's backlight
+
+// --- Constant Definitions ---
+#define BFO_STEP_HZ      25  // BFO (Beat Frequency Oscillator) adjustment step in Hertz for SSB
+#define UI_W             320 // Display width in pixels
+#define UI_H             170 // Display height in pixels
+
+// ===================================================================================
+// SECTION 2: DATA STRUCTURES AND GLOBAL VARIABLES
+// ===================================================================================
+
+// Array with text names for modulations to display on the screen
+const char* mod_names[] = {"FM", "LSB", "USB", "AM"};
+// Enumeration (enum) for convenient handling of modulations in the code
+enum Modulation {FM, LSB, USB, AM};
+
+// Structure to describe a single radio band
+struct Band {
+  const char* name;           // Band name (e.g., "MW")
+  uint16_t min_freq;          // Minimum frequency of the band in kHz (or 10kHz for FM)
+  uint16_t max_freq;          // Maximum frequency of the band
+  uint16_t default_freq;      // Default frequency when switching to this band
+  Modulation default_mod;     // Default modulation for this band
+  bool ssb_allowed;           // Is SSB mode allowed on this band?
+};
+
+// Array containing all available bands
+const Band bands[] = {
+  {"LW", 150, 520, 279, AM, false},
+  {"MW", 520, 1710, 1000, AM, false},
+  {"SW 1.7-4", 1710, 4000, 3570, LSB, true},
+  {"SW 4-8", 4000, 8000, 7074, USB, true},
+  {"SW 8-15", 8000, 15000, 14270, USB, true},
+  {"SW 15-30", 15000, 30000, 21200, USB, true},
+  {"FM", 6400, 10800, 9950, FM, false}
+};
+// Constant that stores the number of bands (calculated automatically)
+const int NUM_BANDS = sizeof(bands) / sizeof(bands[0]);
+
+// Structure to store the complete state of the radio (all its settings)
+struct State {
+  int band = 3;                       // Current band index
+  uint16_t freq = bands[3].default_freq; // Current frequency
+  Modulation mod = bands[3].default_mod; // Current modulation
+  int bfo = 0;                        // Current BFO offset in Hertz
+  int step = 1, stepFM = 10;          // Tuning steps for AM/SSB and FM
+  int vol = 35;                       // Current volume level
+};
+// We create two instances of the state:
+State radio; // for the current operating state
+State menu;  // for temporary changes in the menu
+
+// Enumeration for menu items
+enum MenuItem { M_BAND, M_VOL, M_MOD, M_STEP, M_EXIT };
+const int MENU_ITEMS = 5;
+
+// --- Objects and State Variables ---
+SI4735_fixed rx;                      // Object for controlling the radio chip
+TFT_eSPI tft = TFT_eSPI();            // Object for controlling the display
+TFT_eSprite spr = TFT_eSprite(&tft);  // Sprite object (frame buffer for flicker-free drawing)
+Rotary encoder(ENCODER_PIN_B, ENCODER_PIN_A); // Encoder object
+
+// The `volatile` keyword tells the compiler that this variable can be changed
+// by an interrupt, so it must always be read from memory, not from the processor cache.
+volatile int encoderChange = 0; // Flag set by the interrupt when the encoder is rotated
+
+bool inMenu = false;          // Flag: are we in the menu?
+int selectedMenuItem = 0;     // Index of the selected menu item
+bool needsRedraw = true;      // Optimization flag to avoid redrawing the screen in every loop cycle
+
+// Function prototypes, so the compiler knows about them before they are defined
+void ICACHE_RAM_ATTR onEncoder();
+void setRadio();
+void showMenu(), showMain();
+void handleEncoder(), handleButton();
+void changeBand(int), changeVol(int), changeMod(int), changeStep(int), changeFreq(int);
+
+// ===================================================================================
+// SECTION 3: setup() FUNCTION - RUNS ONCE ON STARTUP
+// ===================================================================================
+
+void setup() {
+  // Initialize the serial port for debugging
+  Serial.begin(115200);
+
+  // Critically important encoder pin initialization. `INPUT_PULLUP` activates
+  // the internal pull-up resistors, ensuring stable HIGH/LOW levels
+  // and protecting against noise. The encoder will not work without this.
+  pinMode(ENCODER_PIN_A, INPUT_PULLUP); 
+  pinMode(ENCODER_PIN_B, INPUT_PULLUP); 
+  
+  // Initialize other pins
+  pinMode(ENCODER_BTN, INPUT_PULLUP); // Encoder button
+  pinMode(PIN_AMP_EN, OUTPUT);        // Amplifier control
+  pinMode(PIN_POWER_ON, OUTPUT);      // Chip power control
+
+  // Turn on the SI4735 power, but keep the amplifier off for now
+  digitalWrite(PIN_POWER_ON, HIGH);
+  digitalWrite(PIN_AMP_EN, LOW);
+
+  // Initialize I2C bus and display
+  Wire.begin(ESP32_I2C_SDA, ESP32_I2C_SCL);
+  tft.begin();
+  tft.setRotation(3); // Rotate screen to landscape mode
+  spr.createSprite(UI_W, UI_H); // Create the frame buffer with the screen dimensions
+
+  // Configure PWM for backlight brightness control
+  ledcAttach(PIN_LCD_BL, 16000, 8); // channel, frequency, resolution
+  ledcWrite(PIN_LCD_BL, 200);       // Set brightness (0-255)
+
+  // Display a startup message on the screen
+  spr.fillSprite(TFT_BLACK);
+  spr.setTextDatum(MC_DATUM); // Align text to the center
+  spr.setTextColor(TFT_WHITE);
+  spr.drawString("Searching for SI4735...", UI_W/2, UI_H/2, 4);
+  spr.pushSprite(0, 0); // Push the buffer to the actual screen
+
+  // Search for and initialize the SI4735 radio chip
+  if (!rx.getDeviceI2CAddress(RESET_PIN)) {
+    spr.drawString("SI4735 not found!", UI_W/2, UI_H/2, 4);
+    spr.pushSprite(0, 0);
+    while(true); // If the chip is not found, halt execution
+  }
+  rx.setup(RESET_PIN, 0); // Basic chip setup
+  delay(500); // Pause for stabilization
+  
+  // Apply initial radio settings and turn on the amplifier
+  setRadio();
+  digitalWrite(PIN_AMP_EN, HIGH);
+
+  // Attach the `onEncoder` interrupt handler to both encoder pins.
+  // When the state of either pin A or B changes, the `onEncoder` function will be called.
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A), onEncoder, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_B), onEncoder, CHANGE);
+}
+
+// ===================================================================================
+// SECTION 4: loop() FUNCTION - RUNS CONTINUOUSLY
+// ===================================================================================
+
+void loop() {
+  // If the `encoderChange` flag is not zero, it means the encoder was rotated
+  if (encoderChange != 0) {
+    handleEncoder();    // Call the rotation handler
+    needsRedraw = true; // Set the flag to redraw the screen
+  }
+  
+  // Check if the encoder button was pressed
+  handleButton();
+  
+  // If the screen needs to be redrawn
+  if (needsRedraw) {
+    // Choose which screen to draw: menu or main
+    if (inMenu) showMenu(); else showMain();
+    needsRedraw = false; // Reset the flag, as the screen has been redrawn
+  }
+  
+  // A small delay for stability and to reduce CPU load
+  delay(10);
+}
+
+// ===================================================================================
+// SECTION 5: HANDLER FUNCTIONS
+// ===================================================================================
+
+// Interrupt Service Routine (ISR). Must be as fast as possible.
+// The `ICACHE_RAM_ATTR` attribute places it in the fast RAM of the ESP32.
+void ICACHE_RAM_ATTR onEncoder() {
+  unsigned char res = encoder.process(); // Process the pin state change
+  if (res == DIR_CW)      encoderChange = 1;  // If rotation is clockwise, set flag to 1
+  else if (res == DIR_CCW) encoderChange = -1; // If counter-clockwise, set to -1
+}
+
+// Function called from `loop()` to handle the rotation
+void handleEncoder() {
+  int dir; // Local variable to store the direction
+  
+  // "Critical Section": temporarily disable interrupts to safely
+  // read and reset `encoderChange`, avoiding a race condition.
+  noInterrupts();
+  dir = encoderChange;
+  encoderChange = 0;
+  interrupts();
+  
+  if (dir == 0) return; // If for some reason there was no change, exit
+
+  if (inMenu) { // If we are in menu mode
+    int direction = (dir > 0) ? 1 : -1; // For the menu, we only care about a single step
+    switch (selectedMenuItem) {
+      case M_BAND: changeBand(direction); break;
+      case M_VOL:  changeVol(direction); break;
+      case M_MOD:  changeMod(direction); break;
+      case M_STEP: changeStep(direction); break;
+      case M_EXIT: // If the "Exit" item is selected
+        inMenu = false; radio = menu; radio.freq = bands[radio.band].default_freq; setRadio();
+        break;
+    }
+  } else { // If we are on the main screen (changing frequency)
+    changeFreq(dir); // Pass `dir` as-is to allow for fast scrolling
+  }
+}
+
+// Handles encoder button presses
+void handleButton() {
+  static unsigned long last = 0; // Static variable for debouncing
+  if (digitalRead(ENCODER_BTN) == LOW && millis() - last > 250) {
+    if (!inMenu) { // If not in menu, enter it
+      inMenu = true; 
+      menu = radio; // Copy current settings into `menu`
+      selectedMenuItem = 0;
+    } else { // If already in menu, switch to the next item
+      selectedMenuItem = (selectedMenuItem + 1) % MENU_ITEMS;
+    }
+    needsRedraw = true;
+    last = millis(); // Record the time of the press
+  }
+}
+
+// ===================================================================================
+// SECTION 6: STATE-CHANGING FUNCTIONS
+// ===================================================================================
+
+// Key function for frequency tuning. Contains special logic for SSB.
+void changeFreq(int dir) {
+  auto &r = radio;
+  const Band* b = &bands[r.band];
+  
+  if (r.mod == LSB || r.mod == USB) { // --- SSB Logic ---
+    // 1. Save the old frequency to track if it changes.
+    uint16_t old_freq = r.freq;
+    // 2. Only change the BFO value in our variable.
+    r.bfo += dir * BFO_STEP_HZ;
+
+    // 3. Check if we have crossed the 1 kHz boundary.
+    while (r.bfo >= 500) { r.freq++; r.bfo -= 1000; }
+    while (r.bfo <= -500) { r.freq--; r.bfo += 1000; }
+
+    // 4. If the main frequency (in kHz) has changed, send the setFrequency command.
+    if (r.freq != old_freq) {
+      if (r.freq > b->max_freq) r.freq = b->min_freq;
+      if (r.freq < b->min_freq) r.freq = b->max_freq;
+      rx.setFrequency(r.freq);
+    }
+    // 5. ALWAYS send the setSSBBfo command. This is what ensures smooth tuning without "pops".
+    rx.setSSBBfo(-r.bfo);
+
+  } else { // --- AM and FM Logic ---
+    int step = (r.mod == FM) ? r.stepFM : r.step;
+    r.freq += dir * step;
+    if (r.freq > b->max_freq) r.freq = b->min_freq;
+    if (r.freq < b->min_freq) r.freq = b->max_freq;
+    rx.setFrequency(r.freq);
+  }
+}
+
+// Change band in the menu
+void changeBand(int d) {
+  menu.band = (menu.band + d + NUM_BANDS) % NUM_BANDS;
+  menu.mod = bands[menu.band].default_mod; // Reset modulation to the default for the new band
+}
+
+// Change volume in the menu
+void changeVol(int d) {
+    menu.vol = constrain(menu.vol + d, 0, 63); // Limit the value between 0 and 63
+    // Immediately send the command to the receiver for an instant response to the change
+    rx.setVolume(menu.vol);
+}
+
+// Change modulation in the menu
+void changeMod(int d) {
+  auto b = bands[menu.band];
+  if (!b.ssb_allowed) return; // If SSB is not allowed, do nothing
+  int m = (int)menu.mod;
+  if (d > 0) menu.mod = (m >= AM) ? LSB : (Modulation)(m + 1);
+  else       menu.mod = (m <= LSB) ? AM : (Modulation)(m - 1);
+}
+
+// Change tuning step in the menu
+void changeStep(int d) {
+  if (bands[menu.band].default_mod == FM) {
+    const int steps[] = {1, 5, 10, 20}; int idx=0; for(int i=0;i<4;i++) if(menu.stepFM==steps[i]) idx=i;
+    idx = (idx + d + 4) % 4; menu.stepFM = steps[idx];
+  } else {
+    const int steps[] = {1, 5, 9, 10}; int idx=0; for(int i=0;i<4;i++) if(menu.step==steps[i]) idx=i;
+    idx = (idx + d + 4) % 4; menu.step = steps[idx];
+  }
+}
+
+// ===================================================================================
+// SECTION 7: DISPLAY FUNCTIONS
+// ===================================================================================
+
+// Renders the main screen
+void showMain() {
+  spr.fillSprite(TFT_BLACK); // Clear the buffer
+  spr.setTextFont(7); // Set large font for frequency
+  spr.setTextDatum(TL_DATUM); // Align to top-left corner
+  spr.setTextColor(TFT_WHITE);
+  
+  char freq[16], unit[5];
+  if (radio.mod == FM) { sprintf(freq, "%.2f", radio.freq / 100.0); strcpy(unit, "MHz"); }
+  else {
+    float df = radio.freq + (radio.bfo / 1000.0);
+    (radio.bfo == 0) ? sprintf(freq, "%u", radio.freq) : sprintf(freq, "%.2f", df);
+    strcpy(unit, "kHz");
+  }
+  
+  spr.drawString(freq, 10, 20); spr.setTextFont(4); spr.drawString(unit, 270, 55);
+  spr.setTextFont(2); // Smaller font for other info
+  spr.drawString(String("Band: ") + bands[radio.band].name, 10, 90);
+  spr.drawString(String("Mode: ") + mod_names[radio.mod], 10, 110);
+  int stepNow = (radio.mod == FM) ? radio.stepFM * 10 : radio.step;
+  spr.drawString(String("Step: ") + stepNow + "kHz", 10, 130);
+  spr.drawString(String("Volume: ") + radio.vol, 10, 150);
+  
+  spr.pushSprite(0, 0); // Push the finished buffer to the screen
+}
+
+// Renders the menu
+void showMenu() {
+  spr.fillSprite(TFT_BLACK); spr.setTextDatum(TL_DATUM); spr.setTextFont(4);
+  String items[MENU_ITEMS];
+  items[M_BAND] = "Band: " + String(bands[menu.band].name);
+  items[M_VOL]  = "Volume: " + String(menu.vol);
+  items[M_MOD]  = "Mode: "   + String(mod_names[menu.mod]);
+  int stepNow = (bands[menu.band].default_mod == FM) ? menu.stepFM * 10 : menu.step;
+  items[M_STEP] = "Step: "   + String(stepNow) + "kHz";
+  items[M_EXIT] = "Set & Exit";
+  
+  for(int i=0;i<MENU_ITEMS;i++) {
+    // If the menu item is selected, invert its colors (white on black -> black on white)
+    spr.setTextColor(selectedMenuItem == i ? TFT_BLACK : TFT_WHITE, selectedMenuItem == i ? TFT_WHITE : TFT_BLACK);
+    spr.drawString(items[i], 10, 10 + i*35);
+  }
+  spr.pushSprite(0, 0);
+}
+
+// ===================================================================================
+// SECTION 8: SERVICE FUNCTION
+// ===================================================================================
+
+// Applies settings to the radio chip
+void setRadio() {
+  digitalWrite(PIN_AMP_EN, LOW); delay(20); // Turn off the amplifier while changing settings
+  
+  radio.bfo = 0; // Reset BFO on every mode change
+  const Band* b = &bands[radio.band];
+  
+  if(radio.mod == FM) rx.setFM(b->min_freq, b->max_freq, radio.freq, radio.stepFM);
+  else if(radio.mod == AM) rx.setAM(b->min_freq, b->max_freq, radio.freq, radio.step);
+  else { // LSB or USB
+    rx.loadPatch(ssb_patch_content, sizeof(ssb_patch_content)); // Load the SSB patch
+    uint8_t ssbm = (radio.mod == LSB) ? 1 : 2; // Select LSB (1) or USB (2)
+    rx.setSSB(b->min_freq, b->max_freq, radio.freq, radio.step, ssbm);
+    rx.setSSBBfo(0); // Set BFO to 0
+  }
+  
+  rx.setVolume(radio.vol); // Set the volume
+  
+  delay(50); // Pause for stabilization
+  digitalWrite(PIN_AMP_EN, HIGH); // Turn the amplifier back on
+}

@@ -1,0 +1,382 @@
+// ===================================================================================
+// РАЗДЕЛ 1: ПОДКЛЮЧЕНИЕ БИБЛИОТЕК И ГЛОБАЛЬНЫЕ ОПРЕДЕЛЕНИЯ
+// ===================================================================================
+
+// Подключение необходимых библиотек
+#include <Wire.h>           // Для работы с I2C шиной (для связи с SI4735)
+#include <TFT_eSPI.h>       // Основная библиотека для работы с TFT дисплеем
+#include <SI4735-fixed.h>   // Библиотека для управления радиочипом SI4735
+#include <Rotary.h>         // Библиотека для работы с поворотным энкодером (валкодером)
+#include "patch_init.h"     // Файл с патчем для активации SSB режима в SI4735
+
+// --- Определение пинов (контактов) микроконтроллера ESP32 ---
+#define PIN_POWER_ON     15 // Пин для включения питания чипа SI4735
+#define RESET_PIN        16 // Пин для сброса (reset) чипа SI4735
+#define PIN_AMP_EN       10 // Пин для включения/выключения внешнего усилителя звука
+#define ESP32_I2C_SCL    17 // Пин SCL для шины I2C
+#define ESP32_I2C_SDA    18 // Пин SDA для шины I2C
+#define ENCODER_PIN_A    2  // Пин "A" энкодера
+#define ENCODER_PIN_B    1  // Пин "B" энкодера
+#define ENCODER_BTN      21 // Пин кнопки энкодера
+#define PIN_LCD_BL       38 // Пин для управления подсветкой дисплея (Backlight)
+
+// --- Определение констант ---
+#define BFO_STEP_HZ      25  // Шаг подстройки опорного генератора (BFO) в герцах для SSB
+#define UI_W             320 // Ширина дисплея в пикселях
+#define UI_H             170 // Высота дисплея в пикселях
+
+// ===================================================================================
+// РАЗДЕЛ 2: СТРУКТУРЫ ДАННЫХ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+// ===================================================================================
+
+// Массив с текстовыми названиями модуляций для отображения на экране
+const char* mod_names[] = {"FM", "LSB", "USB", "AM"};
+// Перечисление (enum) для удобной работы с модуляциями в коде
+enum Modulation {FM, LSB, USB, AM};
+
+// Структура для описания одного радиодиапазона
+struct Band {
+  const char* name;           // Название диапазона (например, "MW")
+  uint16_t min_freq;          // Минимальная частота диапазона в кГц (для FM в 10 кГц)
+  uint16_t max_freq;          // Максимальная частота диапазона
+  uint16_t default_freq;      // Частота по умолчанию при переключении на этот диапазон
+  Modulation default_mod;     // Модуляция по умолчанию
+  bool ssb_allowed;           // Разрешен ли SSB режим на этом диапазоне
+};
+
+// Массив, содержащий все доступные диапазоны
+const Band bands[] = {
+  {"LW", 150, 520, 279, AM, false},
+  {"MW", 520, 1710, 1000, AM, false},
+  {"SW 1.7-4", 1710, 4000, 3570, LSB, true},
+  {"SW 4-8", 4000, 8000, 7074, USB, true},
+  {"SW 8-15", 8000, 15000, 14270, USB, true},
+  {"SW 15-30", 15000, 30000, 21200, USB, true},
+  {"FM", 6400, 10800, 9950, FM, false}
+};
+// Константа, хранящая количество диапазонов (вычисляется автоматически)
+const int NUM_BANDS = sizeof(bands) / sizeof(bands[0]);
+
+// Структура для хранения полного состояния радио (всех его настроек)
+struct State {
+  int band = 3;                       // Текущий индекс диапазона
+  uint16_t freq = bands[3].default_freq; // Текущая частота
+  Modulation mod = bands[3].default_mod; // Текущая модуляция
+  int bfo = 0;                        // Текущее смещение BFO в герцах
+  int step = 1, stepFM = 10;          // Шаги перестройки для AM/SSB и FM
+  int vol = 35;                       // Текущий уровень громкости
+};
+// Создаем два экземпляра состояния:
+State radio; // для текущего рабочего состояния
+State menu;  // для временных изменений в меню
+
+// Перечисление для пунктов меню
+enum MenuItem { M_BAND, M_VOL, M_MOD, M_STEP, M_EXIT };
+const int MENU_ITEMS = 5;
+
+// --- Объекты и переменные состояния ---
+SI4735_fixed rx;                      // Объект для управления радиочипом
+TFT_eSPI tft = TFT_eSPI();            // Объект для управления дисплеем
+TFT_eSprite spr = TFT_eSprite(&tft);  // Объект "спрайта" (буфер кадра для отрисовки без мерцания)
+Rotary encoder(ENCODER_PIN_B, ENCODER_PIN_A); // Объект энкодера
+
+// Ключевое слово `volatile` сообщает компилятору, что эта переменная может быть изменена
+// из прерывания, поэтому ее нужно всегда читать из памяти, а не из кеша процессора.
+volatile int encoderChange = 0; // Флаг, который устанавливается в прерывании при вращении энкодера
+
+bool inMenu = false;          // Флаг: находимся ли мы в меню?
+int selectedMenuItem = 0;     // Индекс выбранного пункта меню
+bool needsRedraw = true;      // Флаг-оптимизация, чтобы не перерисовывать экран в каждом цикле
+
+// Прототипы функций, чтобы компилятор знал о них до их определения
+void ICACHE_RAM_ATTR onEncoder();
+void setRadio();
+void showMenu(), showMain();
+void handleEncoder(), handleButton();
+void changeBand(int), changeVol(int), changeMod(int), changeStep(int), changeFreq(int);
+
+// ===================================================================================
+// РАЗДЕЛ 3: ФУНКЦИЯ SETUP() - ВЫПОЛНЯЕТСЯ ОДИН РАЗ ПРИ СТАРТЕ
+// ===================================================================================
+
+void setup() {
+  // Инициализация последовательного порта для отладки
+  Serial.begin(115200);
+
+  // Критически важная инициализация пинов энкодера. `INPUT_PULLUP` активирует
+  // внутренние подтягивающие резисторы, обеспечивая стабильные уровни HIGH/LOW
+  // и защищая от помех. Без этого энкодер не будет работать.
+  pinMode(ENCODER_PIN_A, INPUT_PULLUP); 
+  pinMode(ENCODER_PIN_B, INPUT_PULLUP); 
+  
+  // Инициализация остальных пинов
+  pinMode(ENCODER_BTN, INPUT_PULLUP); // Кнопка энкодера
+  pinMode(PIN_AMP_EN, OUTPUT);        // Управление усилителем
+  pinMode(PIN_POWER_ON, OUTPUT);      // Управление питанием чипа
+
+  // Включаем питание SI4735, но пока держим усилитель выключенным
+  digitalWrite(PIN_POWER_ON, HIGH);
+  digitalWrite(PIN_AMP_EN, LOW);
+
+  // Инициализация шины I2C и дисплея
+  Wire.begin(ESP32_I2C_SDA, ESP32_I2C_SCL);
+  tft.begin();
+  tft.setRotation(3); // Поворот экрана в ландшафтный режим
+  spr.createSprite(UI_W, UI_H); // Создание буфера кадра по размеру экрана
+
+  // Настройка ШИМ (PWM) для управления яркостью подсветки
+  ledcAttach(PIN_LCD_BL, 16000, 8); // канал, частота, разрешение
+  ledcWrite(PIN_LCD_BL, 200);       // Установка яркости (0-255)
+
+  // Вывод стартового сообщения на экран
+  spr.fillSprite(TFT_BLACK);
+  spr.setTextDatum(MC_DATUM); // Выравнивание текста по центру
+  spr.setTextColor(TFT_WHITE);
+  spr.drawString("Searching for SI4735...", UI_W/2, UI_H/2, 4);
+  spr.pushSprite(0, 0); // Вывод буфера на реальный экран
+
+  // Поиск и инициализация радиочипа SI4735
+  if (!rx.getDeviceI2CAddress(RESET_PIN)) {
+    spr.drawString("SI4735 not found!", UI_W/2, UI_H/2, 4);
+    spr.pushSprite(0, 0);
+    while(true); // Если чип не найден, останавливаем выполнение
+  }
+  rx.setup(RESET_PIN, 0); // Базовая настройка чипа
+  delay(500); // Пауза для стабилизации
+  
+  // Применяем начальные настройки радио и включаем усилитель
+  setRadio();
+  digitalWrite(PIN_AMP_EN, HIGH);
+
+  // Привязываем обработчик прерываний `onEncoder` к обоим пинам энкодера.
+  // Когда состояние любого из пинов A или B изменится, будет вызвана функция `onEncoder`.
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A), onEncoder, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_B), onEncoder, CHANGE);
+}
+
+// ===================================================================================
+// РАЗДЕЛ 4: ФУНКЦИЯ LOOP() - ВЫПОЛНЯЕТСЯ В БЕСКОНЕЧНОМ ЦИКЛЕ
+// ===================================================================================
+
+void loop() {
+  // Если флаг `encoderChange` не равен нулю, значит энкодер повернули
+  if (encoderChange != 0) {
+    handleEncoder();    // Вызываем обработчик вращения
+    needsRedraw = true; // Устанавливаем флаг необходимости перерисовки экрана
+  }
+  
+  // Проверяем, была ли нажата кнопка энкодера
+  handleButton();
+  
+  // Если нужно перерисовать экран
+  if (needsRedraw) {
+    // Выбираем, какой экран рисовать: меню или основной
+    if (inMenu) showMenu(); else showMain();
+    needsRedraw = false; // Сбрасываем флаг, т.к. экран уже перерисован
+  }
+  
+  // Небольшая задержка для стабильности и снижения нагрузки на процессор
+  delay(10);
+}
+
+// ===================================================================================
+// РАЗДЕЛ 5: ФУНКЦИИ-ОБРАБОТЧИКИ
+// ===================================================================================
+
+// Функция обработчика прерывания. Должна быть максимально быстрой.
+// Атрибут `ICACHE_RAM_ATTR` размещает ее в быстрой оперативной памяти ESP32.
+void ICACHE_RAM_ATTR onEncoder() {
+  unsigned char res = encoder.process(); // Обрабатываем изменение состояния пинов
+  if (res == DIR_CW)      encoderChange = 1;  // Если вращение по часовой, ставим флаг в 1
+  else if (res == DIR_CCW) encoderChange = -1; // Если против часовой, ставим в -1
+}
+
+// Функция, которая вызывается из `loop()` для обработки вращения
+void handleEncoder() {
+  int dir; // Локальная переменная для хранения направления
+  
+  // "Критическая секция": временно отключаем прерывания, чтобы безопасно
+  // прочитать и сбросить `encoderChange`, избегая состояния гонки.
+  noInterrupts();
+  dir = encoderChange;
+  encoderChange = 0;
+  interrupts();
+  
+  if (dir == 0) return; // Если по какой-то причине изменений не было, выходим
+
+  if (inMenu) { // Если мы в режиме меню
+    int direction = (dir > 0) ? 1 : -1; // Для меню нам важен только один шаг
+    switch (selectedMenuItem) {
+      case M_BAND: changeBand(direction); break;
+      case M_VOL:  changeVol(direction); break;
+      case M_MOD:  changeMod(direction); break;
+      case M_STEP: changeStep(direction); break;
+      case M_EXIT: // Если выбран пункт "Выход"
+        inMenu = false; radio = menu; radio.freq = bands[radio.band].default_freq; setRadio();
+        break;
+    }
+  } else { // Если мы на главном экране (меняем частоту)
+    changeFreq(dir); // Передаем `dir` как есть для возможности быстрой прокрутки
+  }
+}
+
+// Обработка нажатия на кнопку энкодера
+void handleButton() {
+  static unsigned long last = 0; // Статическая переменная для защиты от дребезга
+  if (digitalRead(ENCODER_BTN) == LOW && millis() - last > 250) {
+    if (!inMenu) { // Если не в меню, то входим в него
+      inMenu = true; 
+      menu = radio; // Копируем текущие настройки в `menu`
+      selectedMenuItem = 0;
+    } else { // Если уже в меню, переключаемся на следующий пункт
+      selectedMenuItem = (selectedMenuItem + 1) % MENU_ITEMS;
+    }
+    needsRedraw = true;
+    last = millis(); // Запоминаем время нажатия
+  }
+}
+
+// ===================================================================================
+// РАЗДЕЛ 6: ФУНКЦИИ ИЗМЕНЕНИЯ СОСТОЯНИЯ
+// ===================================================================================
+
+// Ключевая функция для перестройки частоты. Содержит специальную логику для SSB.
+void changeFreq(int dir) {
+  auto &r = radio;
+  const Band* b = &bands[r.band];
+  
+  if (r.mod == LSB || r.mod == USB) { // --- Логика для SSB ---
+    // 1. Сохраняем старую частоту, чтобы отследить ее изменение.
+    uint16_t old_freq = r.freq;
+    // 2. Изменяем только значение BFO в переменной.
+    r.bfo += dir * BFO_STEP_HZ;
+
+    // 3. Проверяем, не перешли ли мы границу в 1 кГц.
+    while (r.bfo >= 500) { r.freq++; r.bfo -= 1000; }
+    while (r.bfo <= -500) { r.freq--; r.bfo += 1000; }
+
+    // 4. Если основная частота (в кГц) изменилась, отправляем команду setFrequency.
+    if (r.freq != old_freq) {
+      if (r.freq > b->max_freq) r.freq = b->min_freq;
+      if (r.freq < b->min_freq) r.freq = b->max_freq;
+      rx.setFrequency(r.freq);
+    }
+    // 5. ВСЕГДА отправляем команду setSSBBfo. Именно это обеспечивает плавную подстройку без "пшиков".
+    rx.setSSBBfo(-r.bfo);
+
+  } else { // --- Логика для AM и FM ---
+    int step = (r.mod == FM) ? r.stepFM : r.step;
+    r.freq += dir * step;
+    if (r.freq > b->max_freq) r.freq = b->min_freq;
+    if (r.freq < b->min_freq) r.freq = b->max_freq;
+    rx.setFrequency(r.freq);
+  }
+}
+
+// Изменение диапазона в меню
+void changeBand(int d) {
+  menu.band = (menu.band + d + NUM_BANDS) % NUM_BANDS;
+  menu.mod = bands[menu.band].default_mod; // Сбрасываем модуляцию на дефолтную для нового диапазона
+}
+
+// Изменение громкости в меню
+void changeVol(int d) {
+    menu.vol = constrain(menu.vol + d, 0, 63); // Ограничиваем значение от 0 до 63
+    // Сразу же отправляем команду приемнику для мгновенной реакции на изменение
+    rx.setVolume(menu.vol);
+}
+
+// Изменение модуляции в меню
+void changeMod(int d) {
+  auto b = bands[menu.band];
+  if (!b.ssb_allowed) return; // Если SSB не разрешен, ничего не делаем
+  int m = (int)menu.mod;
+  if (d > 0) menu.mod = (m >= AM) ? LSB : (Modulation)(m + 1);
+  else       menu.mod = (m <= LSB) ? AM : (Modulation)(m - 1);
+}
+
+// Изменение шага перестройки в меню
+void changeStep(int d) {
+  if (bands[menu.band].default_mod == FM) {
+    const int steps[] = {1, 5, 10, 20}; int idx=0; for(int i=0;i<4;i++) if(menu.stepFM==steps[i]) idx=i;
+    idx = (idx + d + 4) % 4; menu.stepFM = steps[idx];
+  } else {
+    const int steps[] = {1, 5, 9, 10}; int idx=0; for(int i=0;i<4;i++) if(menu.step==steps[i]) idx=i;
+    idx = (idx + d + 4) % 4; menu.step = steps[idx];
+  }
+}
+
+// ===================================================================================
+// РАЗДЕЛ 7: ФУНКЦИИ ОТРИСОВКИ
+// ===================================================================================
+
+// Отрисовка главного экрана
+void showMain() {
+  spr.fillSprite(TFT_BLACK); // Очищаем буфер
+  spr.setTextFont(7); // Устанавливаем большой шрифт для частоты
+  spr.setTextDatum(TL_DATUM); // Выравнивание по верхнему левому углу
+  spr.setTextColor(TFT_WHITE);
+  
+  char freq[16], unit[5];
+  if (radio.mod == FM) { sprintf(freq, "%.2f", radio.freq / 100.0); strcpy(unit, "MHz"); }
+  else {
+    float df = radio.freq + (radio.bfo / 1000.0);
+    (radio.bfo == 0) ? sprintf(freq, "%u", radio.freq) : sprintf(freq, "%.2f", df);
+    strcpy(unit, "kHz");
+  }
+  
+  spr.drawString(freq, 10, 20); spr.setTextFont(4); spr.drawString(unit, 270, 55);
+  spr.setTextFont(2); // Шрифт поменьше для остальной информации
+  spr.drawString(String("Band: ") + bands[radio.band].name, 10, 90);
+  spr.drawString(String("Mode: ") + mod_names[radio.mod], 10, 110);
+  int stepNow = (radio.mod == FM) ? radio.stepFM * 10 : radio.step;
+  spr.drawString(String("Step: ") + stepNow + "kHz", 10, 130);
+  spr.drawString(String("Volume: ") + radio.vol, 10, 150);
+  
+  spr.pushSprite(0, 0); // Выводим готовый буфер на экран
+}
+
+// Отрисовка меню
+void showMenu() {
+  spr.fillSprite(TFT_BLACK); spr.setTextDatum(TL_DATUM); spr.setTextFont(4);
+  String items[MENU_ITEMS];
+  items[M_BAND] = "Band: " + String(bands[menu.band].name);
+  items[M_VOL]  = "Volume: " + String(menu.vol);
+  items[M_MOD]  = "Mode: "   + String(mod_names[menu.mod]);
+  int stepNow = (bands[menu.band].default_mod == FM) ? menu.stepFM * 10 : menu.step;
+  items[M_STEP] = "Step: "   + String(stepNow) + "kHz";
+  items[M_EXIT] = "Set & Exit";
+  
+  for(int i=0;i<MENU_ITEMS;i++) {
+    // Если пункт меню выбран, инвертируем его цвета (белый текст на черном фоне -> черный на белом)
+    spr.setTextColor(selectedMenuItem == i ? TFT_BLACK : TFT_WHITE, selectedMenuItem == i ? TFT_WHITE : TFT_BLACK);
+    spr.drawString(items[i], 10, 10 + i*35);
+  }
+  spr.pushSprite(0, 0);
+}
+
+// ===================================================================================
+// РАЗДЕЛ 8: СЕРВИСНАЯ ФУНКЦИЯ
+// ===================================================================================
+
+// Применение настроек к радиочипу
+void setRadio() {
+  digitalWrite(PIN_AMP_EN, LOW); delay(20); // Выключаем усилитель на время смены настроек
+  
+  radio.bfo = 0; // Сбрасываем BFO при каждой смене режима
+  const Band* b = &bands[radio.band];
+  
+  if(radio.mod == FM) rx.setFM(b->min_freq, b->max_freq, radio.freq, radio.stepFM);
+  else if(radio.mod == AM) rx.setAM(b->min_freq, b->max_freq, radio.freq, radio.step);
+  else { // LSB или USB
+    rx.loadPatch(ssb_patch_content, sizeof(ssb_patch_content)); // Загружаем SSB патч
+    uint8_t ssbm = (radio.mod == LSB) ? 1 : 2; // Выбираем LSB (1) или USB (2)
+    rx.setSSB(b->min_freq, b->max_freq, radio.freq, radio.step, ssbm);
+    rx.setSSBBfo(0); // Устанавливаем BFO в 0
+  }
+  
+  rx.setVolume(radio.vol); // Устанавливаем громкость
+  
+  delay(50); // Пауза для стабилизации
+  digitalWrite(PIN_AMP_EN, HIGH); // Включаем усилитель обратно
+}
