@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATS-MINI Firmware Configurator</title>
+</head>
+<body>
+
+	<h1>ATS-MINI Firmware Configurator</h1>
+	<p>This page allows you to customize all key firmware parameters. After setup, you can save the configuration to a file or immediately generate a ready-to-use `ats-mini.ino` file for your device.</p>
+
+	<button onclick="loadConfig()">Load Configuration</button>
+	<button onclick="saveConfig()">Save Configuration</button>
+	<input type="file" id="file-input" accept=".json" style="display: none;">
+
+	<h2>General Settings</h2>
+	<table>
+		<tr>
+			<td><label for="initial-band">Initial Band (index)</label></td>
+			<td><input type="number" id="initial-band" min="0" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="initial-vol">Initial Volume (0-63)</label></td>
+			<td><input type="number" id="initial-vol" min="0" max="63" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="default-step">Default Step (AM/SSB, kHz)</label></td>
+			<td><input type="number" id="default-step" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="default-fm-step">Default Step (FM, x10 kHz)</label></td>
+			<td><input type="number" id="default-fm-step" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="bfo-step">BFO Step (SSB, Hz)</label></td>
+			<td><input type="number" id="bfo-step" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="welcome-message">Welcome Message</label></td>
+			<td><input type="text" id="welcome-message" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="invert-encoder">Invert Encoder Direction</label></td>
+			<td><input type="checkbox" id="invert-encoder"></td>
+		</tr>
+	</table>
+
+	<h2>Modulation Names</h2>
+	<table>
+		<tr>
+			<td><label for="mod-name-fm">FM Label</label></td>
+			<td><input type="text" id="mod-name-fm" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="mod-name-lsb">LSB Label</label></td>
+			<td><input type="text" id="mod-name-lsb" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="mod-name-usb">USB Label</label></td>
+			<td><input type="text" id="mod-name-usb" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="mod-name-am">AM Label</label></td>
+			<td><input type="text" id="mod-name-am" style="width: 98%;"></td>
+		</tr>
+	</table>
+
+	<h2>Tuning Steps</h2>
+    <table>
+		<tr>
+			<td><label for="am-steps">AM/SSB Steps (kHz, comma-separated)</label></td>
+			<td><input type="text" id="am-steps" style="width: 98%;"></td>
+		</tr>
+		<tr>
+			<td><label for="fm-steps">FM Steps (x10 kHz, comma-separated)</label></td>
+			<td><input type="text" id="fm-steps" style="width: 98%;"></td>
+		</tr>
+	</table>
+	
+	 <h2>Main Screen Layout</h2>
+    <div id="main-screen-container">
+        <h3>
+            Frequency
+            <label for="main-frequency-show">Show</label>
+            <input type="checkbox" id="main-frequency-show">
+        </h3>
+        <table>
+            <tr>
+                <td><label>X</label></td>
+                <td><input type="number" id="main-frequency-x"></td>
+            </tr>
+            <tr>
+                <td><label>Y</label></td>
+                <td><input type="number" id="main-frequency-y"></td>
+            </tr>
+            <tr>
+                <td><label>Font</label></td>
+                <td><input type="number" id="main-frequency-font"></td>
+            </tr>
+            <tr>
+                <td><label>Label Prefix</label></td>
+                <td><input type="text" id="main-frequency-prefix"></td>
+            </tr>
+            <tr>
+                <td><label>Color</label></td>
+                <td><input type="color" id="main-frequency-color"></td>
+            </tr>
+            <tr>
+                <td><label>BG Color</label></td>
+                <td><input type="color" id="main-frequency-bgcolor"></td>
+            </tr>
+        </table>
+        <h3>
+            Unit
+            <label for="main-unit-show">Show</label>
+            <input type="checkbox" id="main-unit-show">
+        </h3>
+        <table>
+            <tr>
+                <td><label>X</label></td>
+                <td><input type="number" id="main-unit-x"></td>
+            </tr>
+            <tr>
+                <td><label>Y</label></td>
+                <td><input type="number" id="main-unit-y"></td>
+            </tr>
+            <tr>
+                <td><label>Font</label></td>
+                <td><input type="number" id="main-unit-font"></td>
+            </tr>
+            <tr>
+                <td><label>Label Prefix</label></td>
+                <td><input type="text" id="main-unit-prefix"></td>
+            </tr>
+            <tr>
+                <td><label>Color</label></td>
+                <td><input type="color" id="main-unit-color"></td>
+            </tr>
+            <tr>
+                <td><label>BG Color</label></td>
+                <td><input type="color" id="main-unit-bgcolor"></td>
+            </tr>
+        </table>
+		<h3>
+            Band
+            <label for="main-band-show">Show</label>
+            <input type="checkbox" id="main-band-show">
+        </h3>
+        <table>
+            <tr>
+                <td><label>X</label></td>
+                <td><input type="number" id="main-band-x"></td>
+            </tr>
+            <tr>
+                <td><label>Y</label></td>
+                <td><input type="number" id="main-band-y"></td>
+            </tr>
+            <tr>
+                <td><label>Font</label></td>
+                <td><input type="number" id="main-band-font"></td>
+            </tr>
+            <tr>
+                <td><label>Label Prefix</label></td>
+                <td><input type="text" id="main-band-prefix"></td>
+            </tr>
+            <tr>
+                <td><label>Color</label></td>
+                <td><input type="color" id="main-band-color"></td>
+            </tr>
+            <tr>
+                <td><label>BG Color</label></td>
+                <td><input type="color" id="main-band-bgcolor"></td>
+            </tr>
+        </table>
+		<h3>
+            Mode
+            <label for="main-mode-show">Show</label>
+            <input type="checkbox" id="main-mode-show">
+        </h3>
+        <table>
+            <tr>
+                <td><label>X</label></td>
+                <td><input type="number" id="main-mode-x"></td>
+            </tr>
+            <tr>
+                <td><label>Y</label></td>
+                <td><input type="number" id="main-mode-y"></td>
+            </tr>
+            <tr>
+                <td><label>Font</label></td>
+                <td><input type="number" id="main-mode-font"></td>
+            </tr>
+            <tr>
+                <td><label>Label Prefix</label></td>
+                <td><input type="text" id="main-mode-prefix"></td>
+            </tr>
+            <tr>
+                <td><label>Color</label></td>
+                <td><input type="color" id="main-mode-color"></td>
+            </tr>
+            <tr>
+                <td><label>BG Color</label></td>
+                <td><input type="color" id="main-mode-bgcolor"></td>
+            </tr>
+        </table>
+		<h3>
+            Step
+            <label for="main-step-show">Show</label>
+            <input type="checkbox" id="main-step-show">
+        </h3>
+        <table>
+            <tr>
+                <td><label>X</label></td>
+                <td><input type="number" id="main-step-x"></td>
+            </tr>
+            <tr>
+                <td><label>Y</label></td>
+                <td><input type="number" id="main-step-y"></td>
+            </tr>
+            <tr>
+                <td><label>Font</label></td>
+                <td><input type="number" id="main-step-font"></td>
+            </tr>
+            <tr>
+                <td><label>Label Prefix</label></td>
+                <td><input type="text" id="main-step-prefix"></td>
+            </tr>
+            <tr>
+                <td><label>Color</label></td>
+                <td><input type="color" id="main-step-color"></td>
+            </tr>
+            <tr>
+                <td><label>BG Color</label></td>
+                <td><input type="color" id="main-step-bgcolor"></td>
+            </tr>
+        </table>
+	
+		<h3>
+            Volume
+            <label for="main-volume-show">Show</label>
+            <input type="checkbox" id="main-volume-show">
+        </h3>
+        <table>
+            <tr>
+                <td><label>X</label></td>
+                <td><input type="number" id="main-volume-x"></td>
+            </tr>
+            <tr>
+                <td><label>Y</label></td>
+                <td><input type="number" id="main-volume-y"></td>
+            </tr>
+            <tr>
+                <td><label>Font</label></td>
+                <td><input type="number" id="main-volume-font"></td>
+            </tr>
+            <tr>
+                <td><label>Label Prefix</label></td>
+                <td><input type="text" id="main-volume-prefix"></td>
+            </tr>
+            <tr>
+                <td><label>Color</label></td>
+                <td><input type="color" id="main-volume-color"></td>
+            </tr>
+            <tr>
+                <td><label>BG Color</label></td>
+                <td><input type="color" id="main-volume-bgcolor"></td>
+            </tr>
+        </table>
+    </div>
+    
+    
+    <h2>Menu Screen Layout</h2>
+
+    
+	<h3>Menu Appearance</h3>
+         <table>
+                <tr>
+                    <td><label>Font (1, 2, 4, 6, 7, 8)</label></td>
+                    <td><input type="number" id="menu-font"></td>
+                </tr>
+                <tr>
+                    <td><label>Vertical Spacing (px)</label></td>
+                    <td><input type="number" id="menu-spacing"></td>
+                </tr>
+                <tr>
+                    <td><label>X Coordinate</label></td>
+                    <td><input type="number" id="menu-x"></td>
+                </tr>
+                 <tr>
+                    <td><label>Y Coordinate (start)</label></td>
+                    <td><input type="number" id="menu-y"></td>
+                </tr>
+                <tr>
+                    <td><label>Text Color</label></td>
+                    <td><input type="color" id="menu-color"></td>
+                </tr>
+                <tr>
+                    <td><label>Background Color</label></td>
+                    <td><input type="color" id="menu-bgcolor"></td>
+                </tr>
+                <tr>
+                    <td><label>Selected Text Color</label></td>
+                    <td><input type="color" id="menu-selected_color"></td>
+                </tr>
+                <tr>
+                    <td><label>Selected BG Color</label></td>
+                    <td><input type="color" id="menu-selected_bgcolor"></td>
+                </tr>
+            </table>
+    
+    
+    <h3>Menu Item Labels</h3>
+    <table>
+                 <tr>
+                    <td><label for="menu-label-band">Band Prefix</label></td>
+                    <td><input type="text" id="menu-label-band"></td>
+                 </tr>
+                 <tr>
+                    <td><label for="menu-label-vol">Volume Prefix</label></td>
+                    <td><input type="text" id="menu-label-vol"></td>
+                 </tr>
+                 <tr>
+                    <td><label for="menu-label-mod">Mode Prefix</label></td>
+                    <td><input type="text" id="menu-label-mod"></td>
+                 </tr>
+                 <tr>
+                    <td><label for="menu-label-step">Step Prefix</label></td>
+                    <td><input type="text" id="menu-label-step"></td>
+                 </tr>
+                 <tr>
+                    <td><label for="menu-label-exit">Exit Text</label></td>
+                    <td><input type="text" id="menu-label-exit"></td>
+                 </tr>
+             </table>
+
+<h2>Band Editor</h2>
+            <div id="bands-container">
+              </div>
+            <button onclick="addBand()">Add Band</button>
+            <hr>
+            <button onclick="generateInoFile()">Generate ats-mini.ino</button>
+    
+</div>
+
+<script>
+const inoTemplate = `
+#include <Wire.h>
+#include <TFT_eSPI.h>
+#include <SI4735-fixed.h>
+#include <Rotary.h>
+#include "patch_init.h"
+
+#define PIN_POWER_ON     15
+#define RESET_PIN        16
+#define PIN_AMP_EN       10
+#define ESP32_I2C_SCL    17
+#define ESP32_I2C_SDA    18
+#define ENCODER_PIN_A    2
+#define ENCODER_PIN_B    1
+#define ENCODER_BTN      21
+#define PIN_LCD_BL       38
+
+#define BFO_STEP_HZ      {BFO_STEP_HZ}
+#define UI_W             320
+#define UI_H             170
+#define ENCODER_INVERT_MULTIPLIER {ENCODER_MULTIPLIER}
+
+const char* mod_names[] = {{MOD_NAMES}};
+enum Modulation {FM, LSB, USB, AM};
+
+struct Band {
+  const char* name;
+  uint16_t min_freq, max_freq, default_freq;
+  Modulation default_mod;
+  bool ssb_allowed;
+};
+
+const Band bands[] = {
+{BANDS_ARRAY}
+};
+const int NUM_BANDS = sizeof(bands) / sizeof(bands[0]);
+
+struct State {
+  int band = {INITIAL_BAND};
+  uint16_t freq = bands[{INITIAL_BAND}].default_freq;
+  Modulation mod = bands[{INITIAL_BAND}].default_mod;
+  int bfo = 0;
+  int step = {DEFAULT_STEP}, stepFM = {DEFAULT_FM_STEP};
+  int vol = {INITIAL_VOL};
+};
+
+State radio, menu;
+enum MenuItem { M_BAND, M_VOL, M_MOD, M_STEP, M_EXIT };
+const int MENU_ITEMS = 5;
+SI4735_fixed rx;
+TFT_eSPI tft = TFT_eSPI();
+TFT_eSprite spr = TFT_eSprite(&tft);
+Rotary encoder(ENCODER_PIN_B, ENCODER_PIN_A);
+volatile int encoderChange = 0;
+bool inMenu = false;
+int selectedMenuItem = 0;
+bool needsRedraw = true;
+
+void ICACHE_RAM_ATTR onEncoder();
+void setRadio();
+void showMenu(), showMain();
+void handleEncoder(), handleButton();
+void changeBand(int), changeVol(int), changeMod(int), changeStep(int), changeFreq(int);
+
+uint16_t c(const char* hex) {
+  return (uint16_t)strtol(hex + 1, NULL, 16);
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(ENCODER_PIN_A, INPUT_PULLUP); 
+  pinMode(ENCODER_PIN_B, INPUT_PULLUP); 
+  pinMode(ENCODER_BTN, INPUT_PULLUP);
+  pinMode(PIN_AMP_EN, OUTPUT);
+  pinMode(PIN_POWER_ON, OUTPUT);
+  digitalWrite(PIN_POWER_ON, HIGH);
+  digitalWrite(PIN_AMP_EN, LOW);
+  Wire.begin(ESP32_I2C_SDA, ESP32_I2C_SCL);
+  tft.begin();
+  tft.setRotation(3);
+  spr.createSprite(UI_W, UI_H);
+  ledcAttach(PIN_LCD_BL, 16000, 8);
+  ledcWrite(PIN_LCD_BL, 200);
+  spr.fillSprite(TFT_BLACK);
+  spr.setTextDatum(MC_DATUM);
+  spr.setTextColor(TFT_WHITE);
+  spr.drawString("{WELCOME_MESSAGE}", UI_W/2, UI_H/2, 4);
+  spr.pushSprite(0, 0);
+  if (!rx.getDeviceI2CAddress(RESET_PIN)) {
+    spr.drawString("SI4735 not found!", UI_W/2, UI_H/2 + 20, 4);
+    spr.pushSprite(0, 0);
+    while(true);
+  }
+  rx.setup(RESET_PIN, 0);
+  delay(500);
+  setRadio();
+  digitalWrite(PIN_AMP_EN, HIGH);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A), onEncoder, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_B), onEncoder, CHANGE);
+}
+
+void loop() {
+  if (encoderChange != 0) { handleEncoder(); needsRedraw = true; }
+  handleButton();
+  if (needsRedraw) { if (inMenu) showMenu(); else showMain(); needsRedraw = false; }
+  delay(10);
+}
+
+void ICACHE_RAM_ATTR onEncoder() {
+  unsigned char res = encoder.process();
+  if (res == DIR_CW)      encoderChange = 1 * ENCODER_INVERT_MULTIPLIER;
+  else if (res == DIR_CCW) encoderChange = -1 * ENCODER_INVERT_MULTIPLIER;
+}
+
+void handleEncoder() {
+  noInterrupts();
+  int dir = encoderChange;
+  encoderChange = 0;
+  interrupts();
+  if (dir == 0) return;
+  if (inMenu) {
+    int direction = (dir > 0) ? 1 : -1;
+    switch (selectedMenuItem) {
+      case M_BAND: changeBand(direction); break;
+      case M_VOL:  changeVol(direction); break;
+      case M_MOD:  changeMod(direction); break;
+      case M_STEP: changeStep(direction); break;
+      case M_EXIT:
+        inMenu = false; radio = menu; radio.freq = bands[radio.band].default_freq; setRadio();
+        break;
+    }
+  } else { changeFreq(dir); }
+}
+
+void handleButton() {
+  static unsigned long last = 0;
+  if (digitalRead(ENCODER_BTN) == LOW && millis() - last > 250) {
+    if (!inMenu) { inMenu = true; menu = radio; selectedMenuItem = 0; } 
+    else { selectedMenuItem = (selectedMenuItem + 1) % MENU_ITEMS; }
+    needsRedraw = true;
+    last = millis();
+  }
+}
+
+void changeFreq(int dir) {
+  auto &r = radio;
+  const Band* b = &bands[r.band];
+  if (r.mod == LSB || r.mod == USB) {
+    uint16_t old_freq = r.freq;
+    r.bfo += dir * BFO_STEP_HZ;
+    while (r.bfo >= 500) { r.freq++; r.bfo -= 1000; }
+    while (r.bfo <= -500) { r.freq--; r.bfo += 1000; }
+    if (r.freq != old_freq) {
+      if (r.freq > b->max_freq) r.freq = b->min_freq;
+      if (r.freq < b->min_freq) r.freq = b->max_freq;
+      rx.setFrequency(r.freq);
+    }
+    rx.setSSBBfo(-r.bfo);
+  } else {
+    int step = (r.mod == FM) ? r.stepFM : r.step;
+    r.freq += dir * step;
+    if (r.freq > b->max_freq) r.freq = b->min_freq;
+    if (r.freq < b->min_freq) r.freq = b->max_freq;
+    rx.setFrequency(r.freq);
+  }
+}
+
+void changeBand(int d) {
+  menu.band = (menu.band + d + NUM_BANDS) % NUM_BANDS;
+  menu.mod = bands[menu.band].default_mod;
+}
+
+void changeVol(int d) {
+    menu.vol = constrain(menu.vol + d, 0, 63);
+    rx.setVolume(menu.vol);
+}
+
+void changeMod(int d) {
+  auto b = bands[menu.band];
+  if (!b.ssb_allowed) return;
+  int m = (int)menu.mod;
+  if (d > 0) menu.mod = (m >= AM) ? LSB : (Modulation)(m + 1);
+  else menu.mod = (m <= LSB) ? AM : (Modulation)(m - 1);
+}
+
+void changeStep(int d) {
+  if (bands[menu.band].default_mod == FM) {
+    const int steps[] = {{FM_STEPS}};
+    int idx=0; for(int i=0;i<sizeof(steps)/sizeof(steps[0]);i++) if(menu.stepFM==steps[i]) idx=i;
+    idx = (idx + d + sizeof(steps)/sizeof(steps[0])) % (sizeof(steps)/sizeof(steps[0]));
+    menu.stepFM = steps[idx];
+  } else {
+    const int steps[] = {{AM_STEPS}};
+    int idx=0; for(int i=0;i<sizeof(steps)/sizeof(steps[0]);i++) if(menu.step==steps[i]) idx=i;
+    idx = (idx + d + sizeof(steps)/sizeof(steps[0])) % (sizeof(steps)/sizeof(steps[0]));
+    menu.step = steps[idx];
+  }
+}
+
+{SHOW_MAIN_FUNCTION}
+
+{SHOW_MENU_FUNCTION}
+
+void setRadio() {
+  digitalWrite(PIN_AMP_EN, LOW); delay(20);
+  radio.bfo = 0; const Band* b = &bands[radio.band];
+  if(radio.mod == FM) rx.setFM(b->min_freq, b->max_freq, radio.freq, radio.stepFM);
+  else if(radio.mod == AM) rx.setAM(b->min_freq, b->max_freq, radio.freq, radio.step);
+  else {
+    rx.loadPatch(ssb_patch_content, sizeof(ssb_patch_content));
+    uint8_t ssbm = (radio.mod == LSB) ? 1 : 2;
+    rx.setSSB(b->min_freq, b->max_freq, radio.freq, radio.step, ssbm);
+    rx.setSSBBfo(0);
+  }
+  rx.setVolume(radio.vol); delay(50);
+  digitalWrite(PIN_AMP_EN, HIGH);
+}
+`;
+const modEnums = ["FM", "LSB", "USB", "AM"];
+
+let currentConfig = {
+    general: {
+        'initial-band': 3, 'initial-vol': 35, 'default-step': 1, 'default-fm-step': 10,
+        'bfo-step': 25, 'welcome-message': 'Searching for SI4735...', 'invert-encoder': false
+    },
+    mod_names: { 'fm': "FM", 'lsb': "LSB", 'usb': "USB", 'am': "AM" },
+    steps: {
+        'am': '1, 5, 9, 10',
+        'fm': '1, 5, 10, 20'
+    },
+    bands: [
+        {name: "LW", min_freq: 150, max_freq: 520, default_freq: 279, default_mod: "AM", ssb_allowed: false},
+        {name: "MW", min_freq: 520, max_freq: 1710, default_freq: 1000, default_mod: "AM", ssb_allowed: false},
+        {name: "SW 1.7-4", min_freq: 1710, max_freq: 4000, default_freq: 3570, default_mod: "LSB", ssb_allowed: true},
+        {name: "SW 4-8", min_freq: 4000, max_freq: 8000, default_freq: 7074, default_mod: "USB", ssb_allowed: true},
+        {name: "SW 8-15", min_freq: 8000, max_freq: 15000, default_freq: 14270, default_mod: "USB", ssb_allowed: true},
+        {name: "SW 15-30", min_freq: 15000, max_freq: 30000, default_freq: 21200, default_mod: "USB", ssb_allowed: true},
+        {name: "FM", min_freq: 6400, max_freq: 10800, default_freq: 9950, default_mod: "FM", ssb_allowed: false}
+    ],
+    display: {
+        main: {
+            frequency: { label: 'Frequency', show: true, x: 10, y: 20, font: 7, color: '#FFFFFF', bgcolor: '#000000', prefix: ''},
+            unit:      { label: 'Unit',      show: true, x: 270, y: 55, font: 4, color: '#FFFFFF', bgcolor: '#000000', prefix: ''},
+            band:      { label: 'Band',      show: true, x: 10, y: 90, font: 2, color: '#FFFFFF', bgcolor: '#000000', prefix: 'Band: '},
+            mode:      { label: 'Mode',      show: true, x: 10, y: 110, font: 2, color: '#FFFFFF', bgcolor: '#000000', prefix: 'Mode: '},
+            step:      { label: 'Step',      show: true, x: 10, y: 130, font: 2, color: '#FFFFFF', bgcolor: '#000000', prefix: 'Step: '},
+            volume:    { label: 'Volume',    show: true, x: 10, y: 150, font: 2, color: '#FFFFFF', bgcolor: '#000000', prefix: 'Volume: '}
+        },
+        menu: {
+            font: 4, x: 10, y: 10, spacing: 35,
+            color: '#FFFFFF', bgcolor: '#000000',
+            selected_color: '#000000', selected_bgcolor: '#FFFFFF',
+            labels: { band: 'Band: ', vol: 'Volume: ', mod: 'Mode: ', step: 'Step: ', exit: 'Set & Exit' }
+        }
+    }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    populateForm(currentConfig);
+    document.getElementById('file-input').addEventListener('change', handleFileSelect, false);
+});
+
+function populateForm(config) {
+    for (const key in config.general) {
+        const el = document.getElementById(key.replace(/_/g, '-'));
+        if (el.type === 'checkbox') el.checked = config.general[key];
+        else el.value = config.general[key];
+    }
+    for (const key in config.mod_names) {
+        document.getElementById(`mod-name-${key}`).value = config.mod_names[key];
+    }
+  for (const key in config.steps) {
+        document.getElementById(`${key}-steps`).value = config.steps[key];
+    }
+    for (const key in config.display.main) {
+        const itemConfig = config.display.main[key];
+        const idPrefix = `main-${key}-`;
+        document.getElementById(`${idPrefix}show`).checked = itemConfig.show;
+        document.getElementById(`${idPrefix}x`).value = itemConfig.x;
+        document.getElementById(`${idPrefix}y`).value = itemConfig.y;
+        document.getElementById(`${idPrefix}font`).value = itemConfig.font;
+        document.getElementById(`${idPrefix}prefix`).value = itemConfig.prefix;
+        document.getElementById(`${idPrefix}color`).value = itemConfig.color;
+        document.getElementById(`${idPrefix}bgcolor`).value = itemConfig.bgcolor;
+    }
+    for (const key in config.display.menu) {
+       if (key !== 'labels') {
+            document.getElementById(`menu-${key}`).value = config.display.menu[key];
+       }
+    }
+    for (const key in config.display.menu.labels) {
+        document.getElementById(`menu-label-${key}`).value = config.display.menu.labels[key];
+    }
+    renderBands();
+}
+
+function renderBands() {
+    const container = document.getElementById('bands-container');
+    container.innerHTML = ''; 
+    currentConfig.bands.forEach((band, index) => {
+        const bandWrapper = document.createElement('div');
+        const bandHTML = `
+            <h3>
+                Band #${index + 1}: ${band.name} 
+                <button onclick="removeBand(${index})">Delete</button>
+            </h3>
+            <table>
+                <tr>
+                    <td><label>Name</label></td>
+                    <td><input type="text" value="${band.name}" onchange="updateBand(${index}, 'name', this.value)" style="width: 98%;"></td>
+                </tr>
+                <tr>
+                    <td><label>Min Freq</label></td>
+                    <td><input type="number" value="${band.min_freq}" onchange="updateBand(${index}, 'min_freq', this.value)" style="width: 98%;"></td>
+                </tr>
+                <tr>
+                    <td><label>Max Freq</label></td>
+                    <td><input type="number" value="${band.max_freq}" onchange="updateBand(${index}, 'max_freq', this.value)" style="width: 98%;"></td>
+                </tr>
+                <tr>
+                    <td><label>Default Freq</label></td>
+                    <td><input type="number" value="${band.default_freq}" onchange="updateBand(${index}, 'default_freq', this.value)" style="width: 98%;"></td>
+                </tr>
+                <tr>
+                    <td><label>Default Mod</label></td>
+                    <td>
+                        <select onchange="updateBand(${index}, 'default_mod', this.value)">
+                            ${modEnums.map(m => `<option value="${m}" ${band.default_mod === m ? 'selected' : ''}>${m}</option>`).join('')}
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <td><label for="ssb-check-${index}">SSB Allowed</label></td>
+                    <td><input type="checkbox" ${band.ssb_allowed ? 'checked' : ''} onchange="updateBand(${index}, 'ssb_allowed', this.checked)" id="ssb-check-${index}"></td>
+                </tr>
+                <!--<tr><td colspan="2"><hr></td></tr>-->
+            </table>
+        `;
+        bandWrapper.innerHTML = bandHTML;
+        container.appendChild(bandWrapper);
+    });
+}
+      
+
+function updateBand(index, key, value) {
+    if (typeof currentConfig.bands[index][key] === 'number') value = parseInt(value, 10);
+    currentConfig.bands[index][key] = value;
+    if (key === 'name') renderBands();
+}
+
+function addBand() {
+    currentConfig.bands.push({ name: "New Band", min_freq: 1000, max_freq: 2000, default_freq: 1500, default_mod: "AM", ssb_allowed: false });
+    renderBands();
+}
+
+function removeBand(index) {
+    if (confirm(`Are you sure you want to delete band #${index + 1}?`)) {
+        currentConfig.bands.splice(index, 1);
+        renderBands();
+    }
+}
+
+function collectConfigFromForm() {
+    const config = { general: {}, mod_names: {}, steps: {}, bands: currentConfig.bands, display: { main: {}, menu: { labels: {}} } };
+    
+    for (const key in currentConfig.general) {
+        const el = document.getElementById(key.replace(/_/g, '-'));
+        config.general[key] = (el.type === 'checkbox') ? el.checked : el.value;
+    }
+    for (const key in currentConfig.mod_names) config.mod_names[key] = document.getElementById(`mod-name-${key}`).value;
+    
+    config.steps.am = document.getElementById('am-steps').value;
+    config.steps.fm = document.getElementById('fm-steps').value;
+
+    for (const key in currentConfig.display.main) {
+        const itemConf = {};
+        const idPrefix = `main-${key}-`;
+        itemConf.show = document.getElementById(`${idPrefix}show`).checked;
+        itemConf.x = document.getElementById(`${idPrefix}x`).value;
+        itemConf.y = document.getElementById(`${idPrefix}y`).value;
+        itemConf.font = document.getElementById(`${idPrefix}font`).value;
+        itemConf.prefix = document.getElementById(`${idPrefix}prefix`).value;
+        itemConf.color = document.getElementById(`${idPrefix}color`).value;
+        itemConf.bgcolor = document.getElementById(`${idPrefix}bgcolor`).value;
+        config.display.main[key] = itemConf;
+    }
+    
+    for (const key in currentConfig.display.menu) {
+       if (key !== 'labels') {
+            config.display.menu[key] = document.getElementById(`menu-${key}`).value;
+        }
+    }
+    for (const key in currentConfig.display.menu.labels) {
+        config.display.menu.labels[key] = document.getElementById(`menu-label-${key}`).value;
+    }
+    
+    return config;
+}
+
+function saveConfig() {
+    const configToSave = collectConfigFromForm();
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(configToSave, null, 2));
+    const a = document.createElement('a');
+    a.href = dataStr;
+    a.download = "ats-mini-config.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+function loadConfig() { document.getElementById('file-input').click(); }
+
+function handleFileSelect(evt) {
+    const file = evt.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const loadedConfig = JSON.parse(e.target.result);
+            if (loadedConfig.general && loadedConfig.bands && loadedConfig.display && loadedConfig.steps) {
+                currentConfig = loadedConfig;
+                populateForm(currentConfig);
+                alert('Configuration successfully loaded!');
+            } else { alert('Error: Invalid configuration file format.'); }
+        } catch (error) { alert('Error reading file: ' + error.message); }
+    };
+    reader.readAsText(file);
+    evt.target.value = '';
+}
+
+function generateShowMain(config) {
+    let func = "void showMain() {\n";
+    func += "  spr.fillSprite(TFT_BLACK);\n";
+    func += "  spr.setTextDatum(TL_DATUM);\n";
+    func += "  char freqStr[16], unitStr[5];\n\n";
+    func += "  if (radio.mod == FM) {\n";
+    func += "    sprintf(freqStr, \"%.2f\", radio.freq / 100.0);\n";
+    func += "    strcpy(unitStr, \"MHz\");\n";
+    func += "  } else {\n";
+    func += "    float df = radio.freq + (radio.bfo / 1000.0);\n";
+    func += "    (radio.bfo == 0) ? sprintf(freqStr, \"%u\", radio.freq) : sprintf(freqStr, \"%.2f\", df);\n";
+    func += "    strcpy(unitStr, \"kHz\");\n";
+    func += "  }\n\n";
+
+    const d = config.display.main;
+    if (d.frequency.show) {
+        func += `  spr.setTextFont(${d.frequency.font});\n`;
+        func += `  spr.setTextColor(c("${d.frequency.color}"), c("${d.frequency.bgcolor}"));\n`;
+        func += `  spr.drawString(freqStr, ${d.frequency.x}, ${d.frequency.y});\n\n`;
+    }
+    if (d.unit.show) {
+        func += `  spr.setTextFont(${d.unit.font});\n`;
+        func += `  spr.setTextColor(c("${d.unit.color}"), c("${d.unit.bgcolor}"));\n`;
+        func += `  spr.drawString(unitStr, ${d.unit.x}, ${d.unit.y});\n\n`;
+    }
+    if (d.band.show) {
+        func += `  spr.setTextFont(${d.band.font});\n`;
+        func += `  spr.setTextColor(c("${d.band.color}"), c("${d.band.bgcolor}"));\n`;
+        func += `  spr.drawString(String("${d.band.prefix}") + bands[radio.band].name, ${d.band.x}, ${d.band.y});\n\n`;
+    }
+    if (d.mode.show) {
+        func += `  spr.setTextFont(${d.mode.font});\n`;
+        func += `  spr.setTextColor(c("${d.mode.color}"), c("${d.mode.bgcolor}"));\n`;
+        func += `  spr.drawString(String("${d.mode.prefix}") + mod_names[radio.mod], ${d.mode.x}, ${d.mode.y});\n\n`;
+    }
+    if (d.step.show) {
+        func += `  int stepNow = (radio.mod == FM) ? radio.stepFM * 10 : radio.step;\n`;
+        func += `  spr.setTextFont(${d.step.font});\n`;
+        func += `  spr.setTextColor(c("${d.step.color}"), c("${d.step.bgcolor}"));\n`;
+        func += `  spr.drawString(String("${d.step.prefix}") + stepNow + "kHz", ${d.step.x}, ${d.step.y});\n\n`;
+    }
+    if (d.volume.show) {
+        func += `  spr.setTextFont(${d.volume.font});\n`;
+        func += `  spr.setTextColor(c("${d.volume.color}"), c("${d.volume.bgcolor}"));\n`;
+        func += `  spr.drawString(String("${d.volume.prefix}") + radio.vol, ${d.volume.x}, ${d.volume.y});\n\n`;
+    }
+    func += "  spr.pushSprite(0, 0);\n";
+    func += "}\n";
+    return func;
+}
+
+function generateShowMenu(config) {
+    const d = config.display.menu;
+    let func = "void showMenu() {\n";
+    func += `  spr.fillSprite(c("${d.bgcolor}"));\n`;
+    func += "  spr.setTextDatum(TL_DATUM);\n";
+    func += `  spr.setTextFont(${d.font});\n`;
+    func += "  String items[MENU_ITEMS];\n";
+    func += `  items[M_BAND] = "${d.labels.band}" + String(bands[menu.band].name);\n`;
+    func += `  items[M_VOL]  = "${d.labels.vol}" + String(menu.vol);\n`;
+    func += `  items[M_MOD]  = "${d.labels.mod}" + String(mod_names[menu.mod]);\n`;
+    func += `  int stepNow = (bands[menu.band].default_mod == FM) ? menu.stepFM * 10 : menu.step;\n`;
+    func += `  items[M_STEP] = "${d.labels.step}" + String(stepNow) + "kHz";\n`;
+    func += `  items[M_EXIT] = "${d.labels.exit}";\n`;
+    func += "  for(int i=0; i < MENU_ITEMS; i++) {\n";
+    func += `    uint16_t textColor = (selectedMenuItem == i) ? c("${d.selected_color}") : c("${d.color}");\n`;
+    func += `    uint16_t bgColor = (selectedMenuItem == i) ? c("${d.selected_bgcolor}") : c("${d.bgcolor}");\n`;
+    // FIX: Changed trailing backtick to double quote
+    func += "    spr.setTextColor(textColor, bgColor);\n";
+    func += `    spr.drawString(items[i], ${d.x}, ${d.y} + i * ${d.spacing});\n`;
+    func += "  }\n";
+    func += "  spr.pushSprite(0, 0);\n";
+    func += "}\n";
+    return func;
+}
+
+function generateInoFile() {
+    const config = collectConfigFromForm();
+    
+    const initialBandIndex = parseInt(config.general['initial-band'], 10);
+    if (initialBandIndex < 0 || initialBandIndex >= config.bands.length) {
+        alert(`Error: "Initial Band (index)" must be between 0 and ${config.bands.length - 1}.`);
+        return;
+    }
+    
+    let result = inoTemplate;
+    result = result.replace(/{BFO_STEP_HZ}/g, config.general['bfo-step']);
+    result = result.replace(/{INITIAL_BAND}/g, config.general['initial-band']);
+    result = result.replace(/{INITIAL_VOL}/g, config.general['initial-vol']);
+    result = result.replace(/{DEFAULT_STEP}/g, config.general['default-step']);
+    result = result.replace(/{DEFAULT_FM_STEP}/g, config.general['default-fm-step']);
+    result = result.replace(/{WELCOME_MESSAGE}/g, config.general['welcome-message']);
+    result = result.replace(/{ENCODER_MULTIPLIER}/g, config.general['invert-encoder'] ? -1 : 1);
+    
+    // FIX: Generate only the content of the array, not the surrounding braces
+    const modNamesString = `"${config.mod_names.fm}", "${config.mod_names.lsb}", "${config.mod_names.usb}", "${config.mod_names.am}"`;
+    result = result.replace('{MOD_NAMES}', modNamesString);
+
+    const bandsArrayString = config.bands.map(b => 
+        `  {"${b.name}", ${b.min_freq}, ${b.max_freq}, ${b.default_freq}, ${b.default_mod}, ${b.ssb_allowed ? 'true' : 'false'}}`
+    ).join(',\n');
+    result = result.replace('{BANDS_ARRAY}', bandsArrayString);
+
+    result = result.replace('{AM_STEPS}', config.steps.am);
+    result = result.replace('{FM_STEPS}', config.steps.fm);
+
+    result = result.replace('{SHOW_MAIN_FUNCTION}', generateShowMain(config));
+    result = result.replace('{SHOW_MENU_FUNCTION}', generateShowMenu(config));
+
+    const blob = new Blob([result], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "ats-mini.ino";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+</script>
+</body>
+</html>
