@@ -1,0 +1,100 @@
+#include <Wire.h>
+#include <TFT_eSPI.h>
+#include <SI4735-fixed.h>
+#include <ESP32Encoder.h>
+#include "patch_init.h"
+
+#define PIN_POWER_ON 15
+#define RST 16
+#define AMP 10
+#define BL 38
+#define BTN 21
+#define SCL_PIN 17
+#define SDA_PIN 18
+#define ENC_A 2
+#define ENC_B 1
+
+struct Band { const char* n; uint16_t f, F, d; uint8_t m; bool ssb; } const B[] = {
+  {"LW  150 - 520   ", 150, 520, 279, 3, false}, {"MW  520 - 1710  ", 520, 1710, 1000, 3, false},
+  {"SW1 1,7 -  4 MHz", 1710, 4000, 3570, 3, true}, {"SW2   4 -  8 MHz", 4000, 8000, 7074, 3, true}, 
+  {"SW3   8 - 15 MHz", 8000, 15000, 14270, 3, true}, {"SW4  15 - 30 MHz", 15000, 30000, 21200, 3, true}, 
+  {"FM   64 -108 MHz", 8700, 10800, 9950, 0, false}
+};
+
+const int BANDS_TOTAL = sizeof(B) / sizeof(B[0]);
+const char* MOD_NAMES[] = {"FM", "LSB", "USB", "AM"};
+uint8_t band = 3, mod = 2, vol = 35, page = 0, prev_mod = 255;
+uint16_t freq = B[band].d;
+int bfo = 0;
+uint32_t btnTime = 0;
+SI4735_fixed rx; TFT_eSPI tft; ESP32Encoder enc;
+
+void applySettings() {
+  digitalWrite(AMP, LOW);
+  if (mod > 0 && mod < 3 && (prev_mod != mod))
+    rx.loadPatch(ssb_patch_content, sizeof(ssb_patch_content));
+  (mod == 0) ? rx.setFM(B[band].f, B[band].F, freq, B[band].m) :
+  (mod == 3) ? rx.setAM(B[band].f, B[band].F, freq, B[band].m) :
+               rx.setSSB(B[band].f, B[band].F, freq, 1, (mod == 1) ? LSB_MODE : USB_MODE);
+  rx.setVolume(vol);
+  prev_mod = mod;
+  delay(50);
+  digitalWrite(AMP, HIGH);
+}
+
+void drawUI() {
+  tft.fillScreen(0);
+  tft.setTextColor(page == 0 ? TFT_WHITE : page == 1 ? TFT_YELLOW : page == 2 ? TFT_GREEN : TFT_CYAN);
+  String str = page == 0 ? (mod > 0 && mod < 3 ? String(freq + bfo / 1000.0, 3) + "  kHz" : mod == 0 ? String(freq / 100.0, 2) + "  MHz" : String(freq) + "  kHz") :
+              page == 1 ? "volume:  " + String(vol) :
+              page == 2 ? "band:  " + String(B[band].n) :
+                          "mode:  " + String(MOD_NAMES[mod]);
+  tft.drawCentreString(str, 160, 80, 4);
+}
+
+void setup() {
+  pinMode(PIN_POWER_ON, OUTPUT); pinMode(AMP, OUTPUT); pinMode(BTN, INPUT_PULLUP);
+  digitalWrite(PIN_POWER_ON, HIGH); Wire.begin(SDA_PIN, SCL_PIN); 
+  tft.begin(); tft.setRotation(3); ledcAttach(BL, 16000, 8); ledcWrite(BL, 200);
+  if (!rx.getDeviceI2CAddress(RST)) {
+    tft.fillScreen(TFT_RED); tft.drawCentreString("SI4735 NOT FOUND!", 160, 80, 4); while (true);
+  }
+  rx.setup(RST, 0); delay(200);
+  ESP32Encoder::useInternalWeakPullResistors = puType::up; enc.attachSingleEdge(ENC_A, ENC_B);
+  applySettings(); drawUI();
+}
+
+void loop() {
+  long d = enc.getCount() * (-1);
+  if (d != 0) {
+    enc.clearCount();
+    switch (page) {
+      case 0:
+        if (mod > 0 && mod < 3) {
+          bfo += d * d * d * d * d;
+          for(; bfo >= 500; bfo -= 1000) { freq++; }
+          for(; bfo <= -500; bfo += 1000) { freq--; }
+          rx.setSSBBfo(-bfo);
+        } else {
+          freq += d * d * d * ((mod == 0) ? 10 : 1);
+          rx.setFrequency(freq);
+        }
+        freq = constrain(freq, B[band].f, B[band].F); break;
+      case 1:
+        vol = constrain(vol + (d > 0 ? 1 : -1), 0, 63); rx.setVolume(vol); break;
+      case 2:
+      case 3:
+        int dir = d > 0 ? 1 : -1;
+        if (page == 2) band = (band + dir + BANDS_TOTAL) % BANDS_TOTAL;
+        else if (B[band].ssb) for(mod = (mod + dir + 4) % 4; mod == 0; mod = (mod + dir + 4) % 4);
+        freq = B[band].d; mod = (page == 2 || !B[band].ssb) ? B[band].m : mod; bfo = 0;
+        applySettings(); break;
+	}
+    drawUI();
+  }
+  if (!digitalRead(BTN)) btnTime = btnTime ? btnTime : millis(); 
+  else if (btnTime) {
+    page = ((millis() - btnTime > 400) || (page == 2 && !B[band].ssb)) ? 0 : (page + 1) % 4;
+    btnTime = 0; drawUI();
+  }
+}
